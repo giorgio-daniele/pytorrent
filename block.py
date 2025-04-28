@@ -6,14 +6,16 @@ class BlockStatus(Enum):
     DOWNLOADED       = 2
     NOT_REQUESTED    = 3
 
-# Block Class to represent a single block of data
 class Block:
-    def __init__(self, piece_index: int, block_offset: int, length: int, block_data: bytes = b"", status: BlockStatus = BlockStatus.NOT_REQUESTED):
-        self.piece_index  = piece_index        # Index of the piece this block belongs to
-        self.block_offset = block_offset       # Offset within the piece
-        self.block_length = length             # Length of the block
-        self.block_data   = block_data         # The block data (or placeholder)
-        self.status       = status             # The status of the block (REQUESTED, DOWNLOADED, NOT_REQUESTED)
+    def __init__(self, index:  int, 
+                       offset: int, 
+                       length: int, data: bytes = b"", status: BlockStatus = BlockStatus.NOT_REQUESTED):
+        
+        self.index  = index        # Index of the piece this block belongs to
+        self.offset = offset       # Offset within the piece
+        self.length = length       # Length of the block
+        self.data   = data         # The block data (or placeholder)
+        self.status = status       # The status of the block (REQUESTED, DOWNLOADED, NOT_REQUESTED)
 
     def __repr__(self):
-        return f"Block(piece_index={self.piece_index}, offset={self.block_offset}, status={self.status.name})"
+        return f"Block(piece_index={self.index}, offset={self.offset}, status={self.status.name})"

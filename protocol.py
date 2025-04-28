@@ -1,7 +1,7 @@
 import struct
 from   typing import Optional, Tuple
 
-class BitTorrentMessage:
+class Message:
 
     # Message IDs
     CHOKE             = 0
@@ -60,41 +60,41 @@ class BitTorrentMessage:
     
     @staticmethod
     def create_interested() -> bytes:
-        return BitTorrentMessage.create_message(BitTorrentMessage.INTERESTED)
+        return Message.create_message(Message.INTERESTED)
     
     @staticmethod
     def create_not_interested() -> bytes:
-        return BitTorrentMessage.create_message(BitTorrentMessage.NOT_INTERESTED)
+        return Message.create_message(Message.NOT_INTERESTED)
     
     @staticmethod
     def create_choke() -> bytes:
-        return BitTorrentMessage.create_message(BitTorrentMessage.CHOKE)
+        return Message.create_message(Message.CHOKE)
     
     @staticmethod
     def create_unchoke() -> bytes:
-        return BitTorrentMessage.create_message(BitTorrentMessage.UNCHOKE)
+        return Message.create_message(Message.UNCHOKE)
     
     @staticmethod
     def create_have(piece_index: int) -> bytes:
         payload = struct.pack('>I', piece_index)
-        return BitTorrentMessage.create_message(BitTorrentMessage.HAVE, payload)
+        return Message.create_message(Message.HAVE, payload)
     
     @staticmethod
     def create_request(index: int, begin: int, length: int) -> bytes:
         payload = struct.pack('>III', index, begin, length)
-        return BitTorrentMessage.create_message(BitTorrentMessage.REQUEST, payload)
+        return Message.create_message(Message.REQUEST, payload)
     
     @staticmethod
     def create_piece(index: int, begin: int, block: bytes) -> bytes:
         payload = struct.pack('>II', index, begin) + block
-        return BitTorrentMessage.create_message(BitTorrentMessage.PIECE, payload)
+        return Message.create_message(Message.PIECE, payload)
     
     @staticmethod
     def create_cancel(index: int, begin: int, length: int) -> bytes:
         payload = struct.pack('>III', index, begin, length)
-        return BitTorrentMessage.create_message(BitTorrentMessage.CANCEL, payload)
+        return Message.create_message(Message.CANCEL, payload)
     
     @staticmethod
     def create_port(port: int) -> bytes:
         payload = struct.pack('>H', port)
-        return BitTorrentMessage.create_message(BitTorrentMessage.PORT, payload)
+        return Message.create_message(Message.PORT, payload)

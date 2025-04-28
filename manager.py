@@ -1,6 +1,6 @@
 import asyncio
 import random
-from typing import List
+from   typing import List
 
 from constant import *
 from printing import *
@@ -28,11 +28,9 @@ class Manager:
         peer_id = b'-PY0001-' + bytes(random.randint(0, 9) for _ in range(12))
         
         # Create the list of all peers
-        self.peers = [Peer(peer_info=peer,
-                           info_hash=self.info_hash,
-                           peer_id=peer_id,
+        self.peers = [Peer(peer_info=peer, info_hash=self.info_hash, peer_id=peer_id,
                            consume_queue=self.consume_queue,
-                           request_queue=self.request_queue) for peer in peers]
+                           request_queue=self.request_queue, complete=self.complete) for peer in peers]
 
         # Generate the list of blocks
         self.blocks = self.__create_blocks()
@@ -47,12 +45,21 @@ class Manager:
 
             while offset < (piece_end - piece_start):
                 block_length = min(self.block_size, piece_end - piece_start - offset)
-                blocks.append(Block(piece_index=piece_index, block_offset=offset, length=block_length))
+                blocks.append(Block(index=piece_index, offset=offset, length=block_length))
                 offset += block_length
 
         return blocks
 
-    async def consume_block(self):
+
+    """
+    
+    The client runs two seperate tasks: __request_data() and __consume_data(). The
+    first is used to request data to peers, while the second is used to collect data
+    to be assembled later on
+    
+    """
+
+    async def __consume_data(self):
         count        = 0
         total_blocks = len(self.blocks)
 
@@ -62,16 +69,15 @@ class Manager:
 
             for block in self.blocks:
                 block: Block
-                if block.piece_index == res.piece_index and block.block_offset == res.block_offset:
+                if block.index == res.index and block.offset == res.offset:
                     if block.status != BlockStatus.DOWNLOADED:
                         block.status = BlockStatus.DOWNLOADED
-                        block.data   = res.block_data
+                        block.data   = res.data
                         count       += 1
                         
                         # Calculate progress and print it
                         progress = (count / total_blocks) * 100
                         print_blue(f"[info]: downloading... from {ip}, {count}/{total_blocks} blocks ({progress:.2f}%)")
-                        
                     break
 
             self.consume_queue.task_done()
@@ -79,13 +85,9 @@ class Manager:
             
             if count >= total_blocks:
                 self.complete.set()
-
-                # print("\n\n")
-                # for block in self.blocks:
-                #     print(block)
                 print_green("[MANAGER]: All blocks downloaded successfully!")
 
-    async def request_block(self, batch_size: int = 12):
+    async def __request_data(self, batch_size: int = 12):
         while not self.complete.is_set():
             batch = [
                 block for block in random.sample(self.blocks, len(self.blocks))
@@ -95,14 +97,20 @@ class Manager:
             for block in batch:
                 block: Block
                 await self.request_queue.put(block)
-
             await asyncio.sleep(WAITING)
 
         print_yellow("[MANAGER]: Stopped requesting blocks.")
     
+    """
+    
+    The method download is used to trigger the runtime of each peer
+    
+    """
+
+        
     async def download(self):
-        producer_task = asyncio.create_task(self.request_block())
-        consumer_task = asyncio.create_task(self.consume_block())
+        producer_task = asyncio.create_task(self.__request_data())
+        consumer_task = asyncio.create_task(self.__consume_data())
 
         for peer in random.sample(self.peers, min(30, len(self.peers))):
             asyncio.create_task(peer.download())
@@ -131,7 +139,7 @@ class Manager:
         if any(block.status != BlockStatus.DOWNLOADED for block in self.blocks):
             raise Exception("[MANAGER]: Cannot save, some blocks are missing!")
 
-        sorted_blocks = sorted(self.blocks, key=lambda b: (b.piece_index, b.block_offset))
+        sorted_blocks = sorted(self.blocks, key=lambda b: (b.index, b.offset))
         full_data     = b''.join(block.data for block in sorted_blocks)
 
         with open(filename, 'wb') as f:
