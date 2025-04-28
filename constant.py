@@ -1,1 +1,1 @@
-WAITING = 0.1
+WAITING = 0.05

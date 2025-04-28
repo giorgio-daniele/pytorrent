@@ -15,7 +15,7 @@ class Tracker:
     async def announce(self, port: int = 6881, uploaded: int = 0, downloaded: int = 0, left: int = None) -> List[Dict[str, Any]]:
         
         if left is None:
-            left = self.torrent.size - downloaded
+            left = self.torrent.total_size - downloaded
         
         # Prepare tracker request params - non-binary params first
         params = {

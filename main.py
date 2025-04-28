@@ -1,22 +1,39 @@
 #!/usr/bin/env python3
 
 import asyncio
+import argparse
 import random
-from   torrent import Torrent
-from   tracker import Tracker
-from   manager import Manager
-# from   peer_connection import PeerConnection
+import sys
+from torrent import Torrent
+from tracker import Tracker
+from manager import Manager
+from printing import *
+
 
 async def main():
+    # Set up argument parsing
+    parser = argparse.ArgumentParser(description="Torrent Downloader")
+    parser.add_argument("t", help="Path to the torrent file", type=str)
 
-    # Load a torrent file
-    file_name = 'debian.torrent'
-    torrent   = Torrent.from_file(file_name)
+    # Parse the command line arguments
+    args = parser.parse_args()
+
+    # Load the torrent file
+    file_name = args.t
+    try:
+        torrent = Torrent.from_file(file_name)
+    except Exception as e:
+        print_red(f"[MAIN]: Can't parse the torrent file")
+        print_yellow(f"[MAIN]: Exiting the program...")
+        sys.exit(-1)
     
-    # Debug the torrent
+    if len(torrent.files) > 1:
+        print_red(f"[error]: Multi-file torrents are not currently supported")
+        print_yellow(f"[MAIN]: Exiting the program...")
+        sys.exit(-3)
+    
+    # Debug the torrent (optional)
     torrent.debug_print()
-    
-    print("=================")
     
     # Generate a random peer ID (conventionally -XX0000-<random digits>)
     peer_id = b'-PY0001-' + bytes(random.randint(0, 9) for _ in range(12))
@@ -24,25 +41,14 @@ async def main():
     # Create a tracker object
     tracker = Tracker(torrent, peer_id)
     
-    # Announce to the tracker
+    # Announce to the tracker and get the peers
     peers = await tracker.announce(port=6881)
     
-    
     # Create a new manager
-    manager = Manager(pieces=torrent.pieces, peers=peers, piece_size=torrent.piece_length, info_hash=torrent._calculate_info_hash(), 
-                      num_pieces=torrent.num_pieces, 
-                      total_size=torrent.size)
+    manager = Manager(torrent=torrent, peers=peers)
     
+    # Start the download
     await manager.download()
-    
-    # # Try to connect to each peer
-    # connection_tasks = []
-    # for peer in peers[:5]:  # Limit to first 5 peers
-    #     connection = Peer(peer, torrent.info_hash, peer_id)
-    #     connection_tasks.append(connection.connect())
-    
-    # # Wait for all connection attempts
-    # await asyncio.gather(*connection_tasks)
 
 if __name__ == "__main__":
     asyncio.run(main())
