@@ -60,8 +60,8 @@ class Tracker:
             res = bencodepy.decode(response_data)
             
             if b'failure reason' in res:
-                failure = res[b'failure reason'].decode('utf-8')
-                print(f"Tracker error: {failure}")
+                #failure = res[b'failure reason'].decode('utf-8')
+                #print(f"Tracker error: {failure}")
                 return []
             
             # Extract peers info

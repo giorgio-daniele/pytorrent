@@ -17,7 +17,7 @@ class Manager:
         self.info_hash      = torrent.info_hash
         self.num_pieces     = torrent.num_pieces
         self.total_size     = torrent.total_size
-        self.block_size     = min(pow(2, 14), self.piece_size)
+        self.block_size     = min(pow(2, 16), self.piece_size)
         self.peers          = peers
         
         self.consume_queue  = asyncio.Queue()
@@ -26,14 +26,18 @@ class Manager:
 
         # Create a random peer_id
         peer_id = b'-PY0001-' + bytes(random.randint(0, 9) for _ in range(12))
+    
+        # Generate the list of blocks
+        self.blocks = self.__create_blocks()
+        
+        # Track pieces availability
+        self.availability = [0] * self.num_pieces
         
         # Create the list of all peers
         self.peers = [Peer(peer_info=peer, info_hash=self.info_hash, peer_id=peer_id,
                            consume_queue=self.consume_queue,
-                           request_queue=self.request_queue, complete=self.complete) for peer in peers]
-
-        # Generate the list of blocks
-        self.blocks = self.__create_blocks()
+                           request_queue=self.request_queue, complete=self.complete,
+                           availability=self.availability) for peer in peers]
 
     def __create_blocks(self) -> List[Block]:
         blocks = []
@@ -60,46 +64,80 @@ class Manager:
     """
 
     async def __consume_data(self):
-        count        = 0
+        count = 0
         total_blocks = len(self.blocks)
+        
+        downloaded_size = 0
+        total_size      = sum(block.length for block in self.blocks)
+        batch_size      = 20
 
         while not self.complete.is_set():
-            res, ip, port = await self.consume_queue.get()
-            res: Block
+            batch = []
+            try:
+                res = await self.consume_queue.get()
+                batch.append(res)
+                self.consume_queue.task_done()
 
-            for block in self.blocks:
-                block: Block
-                if block.index == res.index and block.offset == res.offset:
-                    if block.status != BlockStatus.DOWNLOADED:
-                        block.status = BlockStatus.DOWNLOADED
-                        block.data   = res.data
-                        count       += 1
-                        
-                        # Calculate progress and print it
-                        progress = (count / total_blocks) * 100
-                        print_blue(f"[info]: downloading... from {ip}, {count}/{total_blocks} blocks ({progress:.2f}%)")
-                    break
+                # Now collect up to BATCH_SIZE - 1 more without waiting
+                for _ in range(batch_size - 1):
+                    try:
+                        res = self.consume_queue.get_nowait()
+                        batch.append(res)
+                        self.consume_queue.task_done()
+                    except asyncio.QueueEmpty:
+                        break
 
-            self.consume_queue.task_done()
-            await asyncio.sleep(WAITING)
+            except Exception as err:
+                continue
             
+            # Process the batch of blocks dequeued
+            for res, ip, port in batch:
+                res: Block
+
+                for block in self.blocks:
+                    block: Block
+                    if block.index == res.index and block.offset == res.offset:
+                        if block.status != BlockStatus.DOWNLOADED:
+                            block.status = BlockStatus.DOWNLOADED
+                            block.data       = res.data
+                            count           += 1
+                            downloaded_size += block.length
+                        break
+            
+            # Calculate and print progress after the batch
+            progress = (downloaded_size / total_size) * 100
+            print_blue(f"[info]: downloading... {downloaded_size} out of {total_size} bytes, {progress:.2f}%)")
+
+            await asyncio.sleep(WAITING)
+
             if count >= total_blocks:
                 self.complete.set()
                 print_green("[MANAGER]: All blocks downloaded successfully!")
 
-    async def __request_data(self, batch_size: int = 12):
+    async def __request_data(self, batch_size: int = 20):
         while not self.complete.is_set():
+            
             batch = [
                 block for block in random.sample(self.blocks, len(self.blocks))
                 if block.status == BlockStatus.NOT_REQUESTED
             ][:batch_size]
+            
+            # # Get the list of all not downloaded blocks
+            # not_requested_blocks = [
+            #     block for block in self.blocks
+            #     if block.status == BlockStatus.NOT_REQUESTED
+            # ]
+
+            # # Sort blocks according to those that are rare
+            # not_requested_blocks.sort(key=lambda b: self.availability[b.index])
+
+            # # Generate the batch to be downloaded
+            # batch = not_requested_blocks[:batch_size]
 
             for block in batch:
                 block: Block
                 await self.request_queue.put(block)
             await asyncio.sleep(WAITING)
-
-        print_yellow("[MANAGER]: Stopped requesting blocks.")
     
     """
     
@@ -112,7 +150,7 @@ class Manager:
         producer_task = asyncio.create_task(self.__request_data())
         consumer_task = asyncio.create_task(self.__consume_data())
 
-        for peer in random.sample(self.peers, min(30, len(self.peers))):
+        for peer in random.sample(self.peers, min(40, len(self.peers))):
             asyncio.create_task(peer.download())
 
         await self.complete.wait()

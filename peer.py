@@ -1,6 +1,6 @@
 import struct
 import asyncio
-from typing import Dict, Any, Optional
+from   typing import Dict, Any, Optional
 
 from constant  import *
 from printing  import *
@@ -14,7 +14,8 @@ class Peer:
                        peer_id: bytes, 
                        consume_queue: asyncio.Queue, 
                        request_queue: asyncio.Queue,
-                       complete: asyncio.Event):
+                       complete:      asyncio.Event,
+                       availability:  list[int]):
         
         self.ip            = peer_info["ip"]
         self.port          = peer_info["port"]
@@ -29,6 +30,8 @@ class Peer:
         self.reader: Optional[asyncio.StreamReader] = None
         self.writer: Optional[asyncio.StreamWriter] = None
         self.complete = complete
+        
+        self.availability = availability
         
     async def __read_timeout(self, n: int, timeout: int = 5):
         try:
@@ -95,7 +98,7 @@ class Peer:
             interested_msg = Message.create_interested()
             await self.__write_timeout(msg=interested_msg)
 
-            print_green(f"[PEER={self.ip}]: Handshake and Interested message sent")
+            #print_green(f"[PEER={self.ip}]: Handshake and Interested message sent")
             return True
         
         except (asyncio.IncompleteReadError, Exception) as err:
@@ -109,7 +112,6 @@ class Peer:
     second is used to transfer downloaded data to manager.py
     
     """
-
 
     async def __request_data(self):
         while not self.complete.is_set():
@@ -149,6 +151,19 @@ class Peer:
 
                     elif msg_id == Message.UNCHOKE:
                         self.choked = False
+                        
+                    elif msg_id == Message.HAVE:
+                        index = struct.unpack(">I", data[1:5])[0]
+                        if 0 <= index < len(self.availability):
+                            self.availability[index] += 1
+
+                    elif msg_id == Message.BITFIELD:
+                        bitfield = data[1:]
+                        for i in range(len(bitfield) * 8):
+                            byte_index = i // 8
+                            bit_index  = 7 - (i % 8)
+                            if byte_index < len(bitfield) and (bitfield[byte_index] >> bit_index) & 1:
+                                self.availability[i] += 1
 
                     elif msg_id == Message.PIECE:
                         index, offset = struct.unpack(">II", data[1:9])
@@ -169,7 +184,8 @@ class Peer:
     """
 
     async def download(self):
-        timeout = 20  # seconds
+        
+        timeout = 25  # seconds
 
         while not self.complete.is_set():
             if await self.__establish() and await self.__handshake():
